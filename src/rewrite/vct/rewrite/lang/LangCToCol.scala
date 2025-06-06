@@ -1326,6 +1326,17 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     cNameSuccessor(cRef) = v
   }
 
+  def evaluateStaticSize(sizeExpr: Expr[Pre]): Option[BigInt] =
+  sizeExpr match {
+    case CIntegerValue(size, _) => Some(size)
+    case Mult(l, r) => (evaluateStaticSize(l), evaluateStaticSize(r)) match {
+      case (None, _) => None
+      case (_, None) => None
+      case (Some(sl), Some(sr)) => Some(sl * sr)
+    }
+    case _ => None
+  }
+
   def addStaticShared(
       cRef: CNameTarget[Pre],
       t: Type[Pre],
@@ -1335,10 +1346,13 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       sizeBlame: Option[Blame[ArraySizeError]],
   ): Unit =
     arraySize match {
-      case Some(CIntegerValue(size, _)) =>
-        val v = new Variable[Post](TPointer[Post](rw.dispatch(t), None))(o)
-        staticSharedMemNames(cRef) = (size, sizeBlame)
-        cNameSuccessor(cRef) = v
+      case Some(expr) => evaluateStaticSize(expr) match {
+        case Some(size) =>
+          val v = new Variable[Post](TPointer[Post](rw.dispatch(t), None))(o)
+          staticSharedMemNames(cRef) = (size, sizeBlame)
+          cNameSuccessor(cRef) = v
+        case None =>throw WrongGPULocalType(declStatement)
+      }
       case _ => throw WrongGPULocalType(declStatement)
     }
 
@@ -1606,17 +1620,17 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
    * If this (multidimensional) array has a statically defined size for each dimension
    * then return a list of each dimension's size
    */
-  def getArrayDimensions(arrType: CTArray[Pre]): Seq[Expr[Post]] = {
+  def getArrayDimensions(arrType: CTArray[Pre]): Seq[Expr[Pre]] = {
     arrType match {
       case CTArray(Some(size), inner @ CTArray(_, _)) =>
         val innerDims = getArrayDimensions(inner)
         if (innerDims.isEmpty) {
           Seq() //missing an inner dimension, just return nothing
         } else {
-          rw.dispatch(size) +: innerDims
+          size +: innerDims
         }
       case CTArray(Some(size), _) =>
-        Seq(rw.dispatch(size))
+        Seq(size)
       case _ => Seq()
     }
   }
@@ -1658,7 +1672,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           case (Some(size), None) =>
             val arrSize = dims match {
               case Seq() => rw.dispatch(size)
-              case _ => dims.foldRight[Expr[Post]](c_const[Post](1))((l,r) => Mult(l,r))
+              case _ => dims.foldRight[Expr[Post]](c_const[Post](1))((l,r) => Mult(rw.dispatch(l),r))
             }
             val newArr =
               NewNonNullPointerArray[Post](t, arrSize, None)(
@@ -1785,7 +1799,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     implicit val o: Origin = arrSub.o
     val topSub = getTopLevelSubscript(arrSub)
     val dims = topSub.collection.t match {
-      case ct @ CTArray(_,_) => getArrayDimensions(ct)
+      case ct @ CTArray(_,_) => getArrayDimensions(ct).map[Expr[Post]](f => rw.dispatch(f))
       case _ => Seq()
     }
     if (dims.size <= 1) {
@@ -1794,7 +1808,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       return result
     } else {
       val indices = getAllIndices(arrSub)
-      val result = AmbiguousSubscript(rw.dispatch(topSub.collection), indexDims(dims, indices, o))(PanicBlame("Rewrite MD indexing"))
+      val result = AmbiguousSubscript(rw.dispatch(topSub.collection), indexDims(dims, indices, o))(arrSub.blame)
       return result
     }
   }
@@ -1842,7 +1856,20 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     getBaseType(t) match {
       case TPointer(it, _) => Some((it, None, None))
       case CTPointer(it) => Some((it, None, None))
-      case a @ CTArray(size, it) => Some((it, size, Some(a.blame)))
+      case a @ CTArray(Some(size), it) => 
+        //flatten statically sized MD arrays
+        val dims = getArrayDimensions(a)
+        val t = dims match {
+          case Seq() => it
+          case _ => getPointedTo(a)
+        }
+        val arrSize = dims match {
+            case Seq() => size
+            case _ => dims.foldRight[Expr[Pre]](c_const[Pre](1)(size.o))((l,r) => Mult(l,r)(r.o))
+        }
+        Some((t, Some(arrSize), Some(a.blame)))
+      case a @ CTArray(None, it) => 
+        Some((it, None, Some(a.blame)))
       case _ => None
     }
 

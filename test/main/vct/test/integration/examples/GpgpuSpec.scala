@@ -15,6 +15,7 @@ class GpgpuSpec extends VercorsSpec {
   vercors should verify using silicon example "concepts/gpgpu/dynamic_shared_opencl.cl"
   vercors should verify using silicon example "concepts/gpgpu/static_shared_cuda.cu"
   vercors should verify using silicon example "concepts/gpgpu/static_shared_opencl.cl"
+  vercors should verify using silicon example "concepts/gpgpu/md_arrays.cu"  
 
   vercors should verify using silicon example "concepts/gpgpu/global_fence_opencl.cl"
 

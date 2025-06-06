@@ -11,8 +11,7 @@
   context_everywhere N > blockDim.x;
   context_everywhere (\forall* int i; 0<=i && i<N; Perm({:A[i]:}, read));
   context_everywhere get_local_id(1) == 0 && get_local_id(0) == 0 ==> Perm(C[0], write);
-  requires Perm({:tmp[get_local_id(1)][get_local_id(0)]:}, write);
-
+  requires Perm({:tmp[get_local_id(0)][get_local_id(1)]:}, write);
 @*/
 __global__ void tiled_kernel( float* A, float* C, int N) {
 
@@ -26,9 +25,15 @@ __global__ void tiled_kernel( float* A, float* C, int N) {
   //Just some arbitrary computation
   tmp[tx][ty] = A[tx];
 
+  //@ requires Perm({:tmp[get_local_id(0)][get_local_id(1)]:}, write);
+  //@ ensures (\forall* int x, int y; 0 <= x && x < 4 && 0 <= y && y < 4; Perm({:tmp[x][y]:}, read));
   __syncthreads();
   // Compute partial sum
+  //@ loop_invariant 0 <= k && k <= 4;
+  //@ loop_invariant (\forall* int x, int y; 0 <= x && x < 4 && 0 <= y && y < 4; Perm({:tmp[x][y]:}, read));        
   for (int k = 0; k < TILE_SIZE; ++k) {
+    //@ loop_invariant 0 <= j && j <= 4;
+    //@ loop_invariant (\forall* int d; 0 <= d && d < 16; Perm({:tmp[d]:}, read));    
     for (int j = 0; j < TILE_SIZE; ++j) {      
       C_value += tmp[j][k];
     }
