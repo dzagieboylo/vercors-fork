@@ -429,7 +429,11 @@ case class LangSpecificToCol[Pre <: Generation](
       case inv: CPPInvocation[Pre] => cpp.invocation(inv)
       case lambda: CPPLambdaDefinition[Pre] =>
         cpp.rewriteLambdaDefinition(lambda)
-      case arrSub @ AmbiguousSubscript(_, _) => cpp.rewriteSubscript(arrSub)
+      case arrSub @ AmbiguousSubscript(_, _) =>
+        cpp.rewriteSubscript(arrSub) match {
+          case Some(e) => e
+          case None => c.rewriteSubscript(arrSub)
+        }
       case unfolding: Unfolding[Pre] => {
         cpp.checkPredicateFoldingAllowed(unfolding.res)
         super.dispatch(unfolding)

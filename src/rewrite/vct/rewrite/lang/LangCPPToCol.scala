@@ -2484,11 +2484,11 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     )
   }
 
-  def rewriteSubscript(sub: AmbiguousSubscript[Pre]): Expr[Post] =
+  def rewriteSubscript(sub: AmbiguousSubscript[Pre]): Option[Expr[Post]] =
     sub match {
       case AmbiguousSubscript(base: CPPLocal[Pre], index)
           if CPP.unwrappedType(base.t).isInstanceOf[SYCLTAccessor[Pre]] =>
-        CPP.unwrappedType(base.t) match {
+        Some(CPP.unwrappedType(base.t) match {
           case SYCLTAccessor(_, 1, _) =>
             ArraySubscript[Post](
               Deref[Post](
@@ -2502,7 +2502,7 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           case t: SYCLTAccessor[Pre] =>
             throw SYCLWrongNumberOfSubscriptsForAccessor(sub, 1, t.dimCount)
           case _ => ???
-        }
+        })
       case AmbiguousSubscript(
             AmbiguousSubscript(base: CPPLocal[Pre], indexX),
             indexY,
@@ -2519,7 +2519,7 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
             new SYCLAccessorDimensionDerefBlame(accessor.rangeIndexFields(1))
           ),
         )
-        CPP.unwrappedType(base.t) match {
+        Some(CPP.unwrappedType(base.t) match {
           case SYCLTAccessor(_, 2, _) =>
             ArraySubscript[Post](
               Deref[Post](currentThis.get, accessor.instanceField.ref)(
@@ -2538,7 +2538,7 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           case t: SYCLTAccessor[Pre] =>
             throw SYCLWrongNumberOfSubscriptsForAccessor(sub, 2, t.dimCount)
           case _ => ???
-        }
+        })
       case AmbiguousSubscript(
             AmbiguousSubscript(
               AmbiguousSubscript(base: CPPLocal[Pre], indexX),
@@ -2562,7 +2562,7 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
             new SYCLAccessorDimensionDerefBlame(accessor.rangeIndexFields(2))
           ),
         )
-        CPP.unwrappedType(base.t) match {
+        Some(CPP.unwrappedType(base.t) match {
           case SYCLTAccessor(_, 3, _) =>
             ArraySubscript[Post](
               Deref[Post](currentThis.get, accessor.instanceField.ref)(
@@ -2581,8 +2581,8 @@ case class LangCPPToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           case t: SYCLTAccessor[Pre] =>
             throw SYCLWrongNumberOfSubscriptsForAccessor(sub, 3, t.dimCount)
           case _ => ???
-        }
-      case _ => rw.rewriteDefault(sub)
+        })
+      case _ => None
     }
 
   def rewriteLifetimeScope(scope: CPPLifetimeScope[Pre]): Statement[Post] = {

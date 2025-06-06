@@ -264,6 +264,14 @@ case object LangCToCol {
       )
   }
 
+  private case class InvalidArrayIndex(c: Expr[_]) extends UserError {
+    override def code: String = "invalidArrayIndexingExpression"
+    override def text: String =
+      c.o.messageInContext(
+        "Multi-dimensional arrays must be accessed with values for all indices exactly"
+      )
+  }
+
 }
 
 case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
@@ -878,6 +886,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       all(blame)(block, cudaCurrentGridDim.top, allThreadsInBlock(blame)(e))
     }
   }
+
 
   def getCDecl(d: CNameTarget[Pre]): CDeclarator[Pre] =
     d match {
@@ -1593,6 +1602,34 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     }
   }
 
+  /**
+   * If this (multidimensional) array has a statically defined size for each dimension
+   * then return a list of each dimension's size
+   */
+  def getArrayDimensions(arrType: CTArray[Pre]): Seq[Expr[Post]] = {
+    arrType match {
+      case CTArray(Some(size), inner @ CTArray(_, _)) =>
+        val innerDims = getArrayDimensions(inner)
+        if (innerDims.isEmpty) {
+          Seq() //missing an inner dimension, just return nothing
+        } else {
+          rw.dispatch(size) +: innerDims
+        }
+      case CTArray(Some(size), _) =>
+        Seq(rw.dispatch(size))
+      case _ => Seq()
+    }
+  }
+
+  def getPointedTo[G](arrType: CTArray[G]): Type[G] = {
+    arrType match {
+      case CTArray(_, inner @ CTArray(_, _)) =>
+        getPointedTo(inner)
+      case CTArray(Some(size), t) => t
+      case _ => TVoid()
+    }
+  }
+  
   // TODO: (AS) Fixed-size arrays seem to become pointers but they're actually value types
   def rewriteArrayDeclaration(
       decl: CLocalDeclaration[Pre],
@@ -1606,15 +1643,25 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
 
     decl.decl.specs match {
       case Seq(CSpecificationType(cta @ CTArray(sizeOption, oldT))) =>
-        val t = rw.dispatch(oldT)
+        val dims = getArrayDimensions(cta)
+        val t = dims match {
+          case Seq() => rw.dispatch(oldT)
+          case _ => rw.dispatch(getPointedTo(cta))
+        }
         val v = new Variable[Post](TPointer(t, None))(o.sourceName(info.name))
         cNameSuccessor(RefCLocalDeclaration(decl, 0)) = v
 
+        //If we have a statically sized MD array, then re-write the declaration
+        //to flatten it as a one-D array
         (sizeOption, init.init) match {
           case (None, None) => throw WrongCType(decl)
           case (Some(size), None) =>
+            val arrSize = dims match {
+              case Seq() => rw.dispatch(size)
+              case _ => dims.foldRight[Expr[Post]](c_const[Post](1))((l,r) => Mult(l,r))
+            }
             val newArr =
-              NewNonNullPointerArray[Post](t, rw.dispatch(size), None)(
+              NewNonNullPointerArray[Post](t, arrSize, None)(
                 cta.blame
               )
             Block(Seq(LocalDecl(v), assignLocal(v.get, newArr)))
@@ -1706,6 +1753,51 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
   def rewriteGoto(goto: CGoto[Pre]): Statement[Post] =
     Goto[Post](rw.succ(goto.ref.getOrElse(???)))(goto.o)
 
+
+  def getTopLevelSubscript(arrSub: AmbiguousSubscript[Pre]): AmbiguousSubscript[Pre] = {
+    arrSub match {
+      case AmbiguousSubscript(sub@AmbiguousSubscript(_,_), idx) =>
+        getTopLevelSubscript(sub)
+      case _ => arrSub
+    }
+  }
+
+  //top-level index on the left so a[x][y] => (x,y)
+  def getAllIndices(arrSub: AmbiguousSubscript[Pre]): Seq[Expr[Post]] = {
+    arrSub match {
+      case AmbiguousSubscript(sub@AmbiguousSubscript(_,_), idx) =>
+        getAllIndices(sub) :+ rw.dispatch(idx)
+      case AmbiguousSubscript(_, idx) => Seq(rw.dispatch(idx))
+    }
+  }
+  
+  def indexDims(dims: Seq[Expr[Post]], idxs: Seq[Expr[Post]], origin: Origin): Expr[Post] = {
+    implicit val o: Origin = origin
+    idxs match {
+      case rest :+ last =>
+        dims.zip(rest).foldLeft[Expr[Post]](last)((l, el) => el match {
+          case (d,i) => i*d + l
+        } )
+    }
+  }
+
+  def rewriteSubscript(arrSub: AmbiguousSubscript[Pre]): AmbiguousSubscript[Post] = {
+    implicit val o: Origin = arrSub.o
+    val topSub = getTopLevelSubscript(arrSub)
+    val dims = topSub.collection.t match {
+      case ct @ CTArray(_,_) => getArrayDimensions(ct)
+      case _ => Seq()
+    }
+    if (dims.size <= 1) {
+      //Normal indexing, don't re-write
+      val result = arrSub.rewriteDefault()
+      return result
+    } else {
+      val indices = getAllIndices(arrSub)
+      val result = AmbiguousSubscript(rw.dispatch(topSub.collection), indexDims(dims, indices, o))(PanicBlame("Rewrite MD indexing"))
+      return result
+    }
+  }
   def gpuBarrier(barrier: GpgpuBarrier[Pre]): Statement[Post] = {
     implicit val o: Origin = barrier.o
 

@@ -198,7 +198,7 @@ case object C {
         val innerInfo = getDeclaratorInfo(inner)
         DeclaratorInfo(
           innerInfo.params,
-          t => CTArray(size, t)(c.blame),
+          t => CTArray(size, innerInfo.typeOrReturnType(t))(c.blame),
           innerInfo.name,
         )
       case CTypeExtensionDeclarator(Seq(CTypeAttribute(name, Seq(size))), inner)
