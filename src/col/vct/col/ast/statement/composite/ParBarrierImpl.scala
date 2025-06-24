@@ -11,5 +11,5 @@ trait ParBarrierImpl[G] extends ParBarrierOps[G] {
       (if (invs.nonEmpty)
          Text(";") <+> Doc.args(invs.map(ctx.name).map(Text))
        else
-         Empty) <> ")" <+> content.layoutAsBlock
+         Empty) <> ")" <+> Text("requires: ") <> requires <+> Text("ensures: ") <> ensures <+> content.layoutAsBlock
 }
