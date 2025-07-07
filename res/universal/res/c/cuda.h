@@ -60,4 +60,6 @@ void cudaEventRecord(cudaEvent_t e, int i);
 void cudaEventSynchronize(cudaEvent_t e);
 int cudaEventElapsedTime(cudaEvent_t begin, cudaEvent_t end);
 
+#include "cuda_ext.h"
+
 #endif

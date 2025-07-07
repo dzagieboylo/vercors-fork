@@ -1,0 +1,63 @@
+#ifndef VECTOR_EXT_H
+#define VECTOR_EXT_H
+
+/*@ pure @*/ float __cosf(float x);
+/*@ pure @*/ float __exp10f(float x);
+/*@ pure @*/ float __expf(float x);
+/*@ pure @*/ float2 __fadd2_rd(float2 x, float2 y);
+/*@ pure @*/ float2 __fadd2_rn(float2 x, float2 y);
+/*@ pure @*/ float2 __fadd2_ru(float2 x, float2 y);
+/*@ pure @*/ float2 __fadd2_rz(float2 x, float2 y);
+/*@ pure @*/ float __fadd_rd(float x, float y);
+/*@ pure @*/ float __fadd_rn(float x, float y);
+/*@ pure @*/ float __fadd_ru(float x, float y);
+/*@ pure @*/ float __fadd_rz(float x, float y);
+/*@ pure @*/ float __fdiv_rd(float x, float y);
+/*@ pure @*/ float __fdiv_rn(float x, float y);
+/*@ pure @*/ float __fdiv_ru(float x, float y);
+/*@ pure @*/ float __fdiv_rz(float x, float y);
+/*@ pure @*/ float __fdividef(float x, float y);
+/*@ pure @*/ float2 __ffma2_rd(float2 x, float2 y, float2 z);
+/*@ pure @*/ float2 __ffma2_rn(float2 x, float2 y, float2 z);
+/*@ pure @*/ float2 __ffma2_ru(float2 x, float2 y, float2 z);
+/*@ pure @*/ float2 __ffma2_rz(float2 x, float2 y, float2 z);
+/*@ pure @*/ float __fmaf_ieee_rd(float x, float y, float z);
+/*@ pure @*/ float __fmaf_ieee_rn(float x, float y, float z);
+/*@ pure @*/ float __fmaf_ieee_ru(float x, float y, float z);
+/*@ pure @*/ float __fmaf_ieee_rz(float x, float y, float z);
+/*@ pure @*/ float __fmaf_rd(float x, float y, float z);
+/*@ pure @*/ float __fmaf_rn(float x, float y, float z);
+/*@ pure @*/ float __fmaf_ru(float x, float y, float z);
+/*@ pure @*/ float __fmaf_rz(float x, float y, float z);
+/*@ pure @*/ float2 __fmul2_rd(float2 x, float2 y);
+/*@ pure @*/ float2 __fmul2_rn(float2 x, float2 y);
+/*@ pure @*/ float2 __fmul2_ru(float2 x, float2 y);
+/*@ pure @*/ float2 __fmul2_rz(float2 x, float2 y);
+/*@ pure @*/ float __fmul_rd(float x, float y);
+/*@ pure @*/ float __fmul_rn(float x, float y);
+/*@ pure @*/ float __fmul_ru(float x, float y);
+/*@ pure @*/ float __fmul_rz(float x, float y);
+/*@ pure @*/ float __frcp_rd(float x);
+/*@ pure @*/ float __frcp_rn(float x);
+/*@ pure @*/ float __frcp_ru(float x);
+/*@ pure @*/ float __frcp_rz(float x);
+/*@ pure @*/ float __frsqrt_rn(float x);
+/*@ pure @*/ float __fsqrt_rd(float x);
+/*@ pure @*/ float __fsqrt_rn(float x);
+/*@ pure @*/ float __fsqrt_ru(float x);
+/*@ pure @*/ float __fsqrt_rz(float x);
+/*@ pure @*/ float __fsub_rd(float x, float y);
+/*@ pure @*/ float __fsub_rn(float x, float y);
+/*@ pure @*/ float __fsub_ru(float x, float y);
+/*@ pure @*/ float __fsub_rz(float x, float y);
+/*@ pure @*/ float __log10f(float x);
+/*@ pure @*/ float __log2f(float x);
+/*@ pure @*/ float __logf(float x);
+/*@ pure @*/ float __powf(float x, float y);
+/*@ pure @*/ float __saturatef(float x);
+/*@ pure @*/ void __sincosf(float x, float *sptr, float *cptr);
+/*@ pure @*/ float __sinf(float x);
+/*@ pure @*/ float __tanf(float x);
+/*@ pure @*/ float __tanhf(float x);
+
+#endif

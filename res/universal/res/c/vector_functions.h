@@ -67,4 +67,6 @@ double3 make_double3(double x, double y, double z);
 //@ ensures Perm(\result, write) ** (\result.x == x && \result.y == y && \result.w == w);
 double4 make_double4(double x, double y, double z, double w);
 
+#include "vector_ext.h"
+
 #endif /* !__VECTOR_FUNCTIONS_H__ */
