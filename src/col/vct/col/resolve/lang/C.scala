@@ -198,7 +198,7 @@ case object C {
         val innerInfo = getDeclaratorInfo(inner)
         DeclaratorInfo(
           innerInfo.params,
-          t => CTArray(size, innerInfo.typeOrReturnType(t))(c.blame),
+          t => innerInfo.typeOrReturnType(CTArray(size, t)(c.blame)),
           innerInfo.name,
         )
       case CTypeExtensionDeclarator(Seq(CTypeAttribute(name, Seq(size))), inner)
@@ -450,7 +450,7 @@ case object C {
       name: String,
   ): Option[RefCStructField[G]] =
     decl.decl match {
-      case CDeclaration(_, _, Seq(CStructDeclaration(_, decls)), Seq()) =>
+      case CDeclaration(_, Seq(CStructDeclaration(_, decls)), Seq()) =>
         decls.flatMap(Referrable.from).collectFirst {
           case ref: RefCStructField[G] if ref.name == name => ref
         }

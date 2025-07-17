@@ -320,6 +320,28 @@ case class ContextEverywhereFailedInPre(
   override def inlineDescWithSource(node: String, failure: String): String =
     s"Context of `$node` may not hold in the precondition, since $failure."
 }
+
+case class MismatchedArrayDimension(
+    node: InvokingNode[_],
+    dimension: Expr[_],
+    v: Variable[_],
+) extends InvocationFailure {
+  override def code: String = "arrayDimension"
+
+  override def position: String = node.o.shortPositionText
+
+  override def desc: String =
+    Message.messagesInContext(
+      node.o -> "Call to applicable may fail, because ...",
+      dimension.o ->
+        s"... this dimension might not match expected type ${v.t}$errUrl",
+    )
+
+  override def inlineDesc: String =
+    s"Call ${node.o.inlineContextText} might fail because `${dimension.o
+        .inlineContextText}` may not match type ${v.t}"
+}
+
 case class SYCLItemMethodPreconditionFailed(node: InvokingNode[_])
     extends NodeVerificationFailure with FrontendInvocationError {
   override def code: String = "syclItemMethodPreFailed"
@@ -800,12 +822,14 @@ case class KernelPredicateNotInjective(
 }
 
 case class KernelInvariantNotEstablished(
-  failure: ContractFailure,
-  node: ParInvariant[_],
+    failure: ContractFailure,
+    node: ParInvariant[_],
 ) extends KernelFailure with WithContractFailure {
   override def baseCode: String = "notEstablished"
-  override def descInContext: String = "This kernel invariant may not be establised, since"
-  override def inlineDescWithSource(node: String, failure: String): String = s"`$node` may not be established, since $failure."
+  override def descInContext: String =
+    "This kernel invariant may not be establised, since"
+  override def inlineDescWithSource(node: String, failure: String): String =
+    s"`$node` may not be established, since $failure."
 }
 
 sealed trait KernelBarrierFailure extends VerificationFailure
@@ -1239,6 +1263,16 @@ case class CoerceZFracFracFailed(node: Expr[_]) extends UnsafeCoercion {
   override def inlineDescWithSource(source: String): String =
     s"`$source` may be zero."
 }
+case class NonNullCoercionError(node: Node[_])
+    extends UnsafeCoercion with NodeVerificationFailure {
+  override def code: String = "arrayPtrNull"
+
+  override def descInContext: String =
+    "Pointer may be null and an array typed variable may not be null."
+
+  override def inlineDescWithSource(source: String): String =
+    s"Pointer in `$source` may be null, but arrays may not be null."
+}
 
 sealed trait JavaAnnotationFailure extends VerificationFailure
 sealed trait JavaConstructorFailure extends VerificationFailure
@@ -1572,10 +1606,6 @@ object AssignLocalOk extends PanicBlame("Assigning to a local can never fail.")
 object DerefAssignTarget
     extends PanicBlame(
       "Assigning to a field should trigger an error on the assignment, and not on the dereference."
-    )
-object SubscriptAssignTarget
-    extends PanicBlame(
-      "Assigning to a subscript should trigger an error on the assignment, and not on the subscript."
     )
 object DerefPerm
     extends PanicBlame(
