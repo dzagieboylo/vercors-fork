@@ -1363,14 +1363,20 @@ abstract class CoercingRewriter[Pre <: Generation]()
             kernel,
             blocks,
             threads,
+            smem_bytes,
             args,
             givenArgs,
             yields,
           ) =>
+        val smem = smem_bytes match {
+          case Some(s) => Some(int(s))
+          case None => None
+        }
         GpgpuCudaKernelInvocation(
           kernel,
           blocks,
           threads,
+          smem,
           args,
           givenArgs,
           yields,

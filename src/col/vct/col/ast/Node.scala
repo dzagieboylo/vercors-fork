@@ -3135,6 +3135,7 @@ final case class GpgpuCudaKernelInvocation[G](
     kernel: String,
     blocks: Expr[G],
     threads: Expr[G],
+    smem_bytes: Option[Expr[G]],
     args: Seq[Expr[G]],
     givenArgs: Seq[(Ref[G, Variable[G]], Expr[G])],
     yields: Seq[(Expr[G], Ref[G, Variable[G]])],

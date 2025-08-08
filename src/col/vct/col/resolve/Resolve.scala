@@ -797,6 +797,7 @@ case object ResolveReferences extends LazyLogging {
             name,
             blocks,
             threads,
+            smem_bytes,
             args,
             givenMap,
             yields,

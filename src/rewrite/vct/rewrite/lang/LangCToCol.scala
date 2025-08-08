@@ -2370,6 +2370,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       ker,
       blocks,
       threads,
+      smem_bytes,
       args,
       givenMap,
       yields,
@@ -2381,11 +2382,15 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     kernel.ref.get match {
       case target: SpecInvocationTarget[_] => ???
       case ref: RefCFunctionDefinition[Pre] =>
+        val smem_size = smem_bytes match {
+          case Some(s) => Some(rw.dispatch(s))
+          case None => None
+        }
         ProcedureInvocation[Post](
           cFunctionSuccessor.ref(ref.decl),
-            rw.dispatch(t_x) +: rw.dispatch(t_y) +: rw.dispatch(t_z) +:
+            (rw.dispatch(t_x) +: rw.dispatch(t_y) +: rw.dispatch(t_z) +:
             rw.dispatch(b_x) +: rw.dispatch(b_y) +: rw.dispatch(b_z) +:
-            args.map(rw.dispatch),
+            args.map(rw.dispatch)) ++ smem_size,
           Nil,
           Nil,
           givenMap.map { case (Ref(v), e) => (rw.succ(v), rw.dispatch(e)) },
