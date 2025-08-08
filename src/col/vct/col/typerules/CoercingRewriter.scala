@@ -1369,8 +1369,8 @@ abstract class CoercingRewriter[Pre <: Generation]()
           ) =>
         GpgpuCudaKernelInvocation(
           kernel,
-          int(blocks),
-          int(threads),
+          blocks,
+          threads,
           args,
           givenArgs,
           yields,

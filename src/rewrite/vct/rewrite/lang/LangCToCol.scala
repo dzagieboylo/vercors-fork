@@ -22,6 +22,7 @@ import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.collection.mutable
 import vct.col.ref.UnresolvedRef
+import vct.col.resolve.NoSuchNameError
 
 case object LangCToCol {
   private case class MultipleSharedMemoryDeclaration(decl: Node[_])
@@ -2336,6 +2337,26 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     }
   }
 
+ def getDimRefs(
+  blocks: Expr[Pre],
+  block_y: Expr[Pre],
+  block_z: Expr[Pre]
+ ): (Expr[Pre], Expr[Pre], Expr[Pre]) = {
+  val blame = PanicBlame("Launch dimension must be an int or a dim3.")
+  blocks.checkSubType(TInt()) match {
+      case Nil =>
+        (blocks, block_y, block_z) //an int - don't need to do anything
+      case _ => 
+        val b_x = CFieldAccess[Pre](blocks, "x")(blame)(blocks.o)
+        b_x.ref = C.findDeref(blocks, "x", blame)
+        val b_y = CFieldAccess[Pre](blocks, "y")(blame)(blocks.o)
+        b_y.ref = C.findDeref(blocks, "y", blame)
+        val b_z = CFieldAccess[Pre](blocks, "y")(blame)(blocks.o)
+        b_z.ref = C.findDeref(blocks, "z", blame)
+        (b_x, b_y, b_z)
+    }
+ }
+
   /** Rewrites a CudaKernelInvocation to a procedure.
     * @param kernel
     *   \- the invocation we want to rewrite
@@ -2354,14 +2375,17 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       yields,
     ) = kernel
     implicit val o: Origin = kernel.o
-    val one = c_const[Post](1)
+    val one = c_const[Pre](1)
+    val (b_x, b_y, b_z) = getDimRefs(blocks, one, one)
+    val (t_x, t_y, t_z) = getDimRefs(threads, one, one)
     kernel.ref.get match {
       case target: SpecInvocationTarget[_] => ???
       case ref: RefCFunctionDefinition[Pre] =>
         ProcedureInvocation[Post](
           cFunctionSuccessor.ref(ref.decl),
-          rw.dispatch(threads) +: one +: one +: rw.dispatch(blocks) +: one +:
-            one +: args.map(rw.dispatch),
+            rw.dispatch(t_x) +: rw.dispatch(t_y) +: rw.dispatch(t_z) +:
+            rw.dispatch(b_x) +: rw.dispatch(b_y) +: rw.dispatch(b_z) +:
+            args.map(rw.dispatch),
           Nil,
           Nil,
           givenMap.map { case (Ref(v), e) => (rw.succ(v), rw.dispatch(e)) },

@@ -536,7 +536,6 @@ case object C {
   def findDeref[G](
       obj: Expr[G],
       name: String,
-      ctx: ReferenceResolutionContext[G],
       blame: Blame[BuiltinError],
   ): Option[CDerefTarget[G]] = {
     (stripUniqueType(stripCPrimitiveType(obj.t)) match {
