@@ -23,6 +23,9 @@ import scala.collection.immutable.ListMap
 import scala.collection.mutable
 import vct.col.ref.UnresolvedRef
 import vct.col.resolve.NoSuchNameError
+import vct.col.typerules.TypeSize.Unknown
+import vct.col.typerules.TypeSize.Exact
+import vct.col.typerules.TypeSize.Minimally
 
 case object LangCToCol {
   private case class MultipleSharedMemoryDeclaration(decl: Node[_])
@@ -30,7 +33,7 @@ case object LangCToCol {
     override def code: String = "multipleSharedMemoryDeclaration"
     override def text: String =
       decl.o.messageInContext(
-        s"We don't support declaring multiple shared memory variables at a single line."
+        s"We don't support declaring multiple shared memory variables at a single line. Furthermore, there can only be 1 dynamically sized shared memory per kernel."
       )
   }
 
@@ -125,6 +128,16 @@ case object LangCToCol {
     override def text: String =
       e.o.messageInContext(
         s"`\\shared_mem_size` should reference a dynamic shared memory location."
+      )
+  }
+
+  private case class InvalidDynamicMemBaseType(e: Expr[_]) extends UserError {
+
+    override def code: String = "invalidDynamicMemBaseType"
+
+    override def text: String =
+      e.o.messageInContext(
+        s"The type of data stored in the shared memory must be of a fixed-size type."
       )
   }
 
@@ -330,13 +343,19 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     .Set()
   private val dynamicSharedMemLengthVar
       : mutable.Map[CNameTarget[Pre], Variable[Post]] = mutable.Map()
+  private val dynamicSharedMemElemSize
+      : mutable.Map[CNameTarget[Pre], Expr[Post]] = mutable.Map()
+      
   private val staticSharedMemNames
       : mutable.Map[CNameTarget[Pre], (BigInt, Option[Blame[ArraySizeError]])] =
     mutable.Map()
+
   private val globalMemNames: mutable.Set[RefCParam[Pre]] = mutable.Set()
   private var kernelSpecifier: Option[CGpgpuKernelSpecifier[Pre]] = None
+
   private val functionPointers
       : mutable.Map[CFunctionDefinition[Pre], Function[Post]] = mutable.Map()
+  private val sharedMemTypeSize: mutable.Map[CFunctionDefinition[Pre], Expr[Post]] = mutable.Map()
 
   private def CStructOrigin(sdecl: CStructDeclaration[_]): Origin =
     sdecl.o.sourceName(sdecl.name.get).withContent(TypeName("struct"))
@@ -426,7 +445,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
 
   def sharedSize(shared: SharedMemSize[Pre]): Expr[Post] = {
     val SharedMemSize(pointer) = shared
-
     val res =
       pointer match {
         case loc: CLocal[Pre] =>
@@ -810,7 +828,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       cCurrentDefinitionParamSubstitutions.having(subs) {
         rw.globalDeclarations.declare(
           func.specs.collectFirst { case k: CGpgpuKernelSpecifier[Pre] =>
-            kernelProcedure(namedO, contract, info, Some(func.body), k)
+            kernelProcedureWrapper(namedO, contract, info, Some(func.body), k, func)
           }.getOrElse({
             val params =
               rw.variables.collect { info.params.get.foreach(rw.dispatch) }._1
@@ -1084,6 +1102,24 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
         .flatMap(e => dimsOfSize1Expr(e) ++ workDimConstrained(e))).distinct
   }
 
+  def kernelProcedureWrapper(
+      o: Origin,
+      contract: ApplicableContract[Pre],
+      info: C.DeclaratorInfo[Pre],
+      body: Option[Statement[Pre]],
+      kernelSpec: CGpgpuKernelSpecifier[Pre],
+      func: CFunctionDefinition[Pre]
+  ): Procedure[Post] = {
+    val proc = kernelProcedure(o, contract, info, body, kernelSpec)
+    val sharedMemElemSize: Expr[Post] = dynamicSharedMemNames.toSeq match {
+      case Seq(head) => dynamicSharedMemElemSize(head)
+      case Seq() => c_const[Post](0)(o)
+      case _ => throw MultipleSharedMemoryDeclaration(func)
+    }
+    sharedMemTypeSize(func) = sharedMemElemSize
+    proc
+  }
+
   def kernelProcedure(
       o: Origin,
       contract: ApplicableContract[Pre],
@@ -1120,7 +1156,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
               sharedMemInits: Seq[Statement[Post]],
             ),
           ) = declareSharedMemory()
-
+          
           val newArgs =
             blockDim.indices.values.toSeq ++ gridDim.indices.values.toSeq ++
               args ++ sharedMemSizes
@@ -1367,6 +1403,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     dynamicSharedMemNames.add(cRef)
     val v = new Variable[Post](TPointer[Post](rw.dispatch(t), None))(o)
     cNameSuccessor(cRef) = v
+    dynamicSharedMemElemSize(cRef) = sizeOf(t, o)
   }
 
   def addStaticShared(
@@ -1665,9 +1702,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
   }
 
   @tailrec
-  private def getArrayType(cta: CTArray[Pre]): Type[Pre] =
+  private def getArrayType[G](cta: CTArray[G]): Type[G] =
     cta.innerType match {
-      case inner: CTArray[Pre] => getArrayType(inner)
+      case inner: CTArray[G] => getArrayType(inner)
       case inner => inner
     }
 
@@ -1841,9 +1878,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     )
   }
 
-  def getInnerPointerInfo(
-      t: Type[Pre]
-  ): Option[(Type[Pre], Option[Expr[Pre]], Option[Blame[ArraySizeError]])] =
+  def getInnerPointerInfo[G](
+      t: Type[G]
+  ): Option[(Type[G], Option[Expr[G]], Option[Blame[ArraySizeError]])] =
     getBaseType(t) match {
       case TPointer(it, _) => Some((it, None, None))
       case CTPointer(it) => Some((it, None, None))
@@ -2382,8 +2419,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     kernel.ref.get match {
       case target: SpecInvocationTarget[_] => ???
       case ref: RefCFunctionDefinition[Pre] =>
-        val smem_size = smem_bytes match {
-          case Some(s) => Some(rw.dispatch(s))
+        val smem_size = smem_bytes match { //convert size from elems to bytes
+          case Some(s) => Some(Mult(rw.dispatch(s), sharedMemTypeSize(ref.decl)))
           case None => None
         }
         ProcedureInvocation[Post](
