@@ -38,7 +38,7 @@ __global__ void alldims(const int* a, const int* b, const int* c, int n) {
   requires Perm({: tmp[threadIdx.x] :}, write);
   @*/
 __global__ void dyn_shared(const int* a, int n) {
-  extern __shared__ int tmp[];
+  extern __shared__ int64_t tmp[];
   tmp[threadIdx.x] = a[threadIdx.x];
 }
 
@@ -60,7 +60,7 @@ int main() {
   grid.z = 1;
   alldims<<<grid,blocks>>>(ac, bc, cc, n);
   alldims<<<1, 12>>>(ac, bc, cc, n);
-  dyn_shared<<<32,32,16>>>(ac, n); //TODO have to convert the size from bytes to the declared mem size
+  dyn_shared<<<32,32,32*sizeof(int64_t)>>>(ac, n); //TODO sizeof functions don't work properly
   vercorsFreeInt(a) /*@ given {size=n} @*/;
   vercorsFreeInt(b) /*@ given {size=n} @*/;
   vercorsFreeInt(c) /*@ given {size=n} @*/;

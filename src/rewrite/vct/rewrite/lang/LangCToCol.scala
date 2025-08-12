@@ -2419,8 +2419,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     kernel.ref.get match {
       case target: SpecInvocationTarget[_] => ???
       case ref: RefCFunctionDefinition[Pre] =>
-        val smem_size = smem_bytes match { //convert size from elems to bytes
-          case Some(s) => Some(Mult(rw.dispatch(s), sharedMemTypeSize(ref.decl)))
+        val smem_size = smem_bytes match { //convert size from bytes to elems
+          case Some(s) => Some(AmbiguousTruncDiv(rw.dispatch(s), sharedMemTypeSize(ref.decl))(PanicBlame("Unreachable sizeof == 0")))
           case None => None
         }
         ProcedureInvocation[Post](
