@@ -1977,9 +1977,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     )
   }
 
-  def getInnerPointerInfo[G](
-      t: Type[G]
-  ): Option[(Type[G], Option[Expr[G]], Option[Blame[ArraySizeError]])] =
+  def getInnerPointerInfo(
+      t: Type[Pre]
+  ): Option[(Type[Pre], Option[Expr[Pre]], Option[Blame[ArraySizeError]])] =
     getBaseType(t) match {
       case TPointer(it, _) => Some((it, None, None))
       case CTPointer(it) => Some((it, None, None))
