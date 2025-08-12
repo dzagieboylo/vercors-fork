@@ -946,9 +946,34 @@ case class CToCol[G](
       case PostfixExpression10(_, _, _, _, _, _, _) => ??(expr)
       case PostfixExpression11(_, _, _, _, _, _, _) => ??(expr)
       case PostfixExpression12(_, _, _, _, _, _, _, _) => ??(expr)
-      case PostfixExpression13(
-            GpgpuCudaKernelInvocation0(
+      case PostfixExpression13(invoc) =>
+        invoc match {
+            case GpgpuCudaKernelInvocation0(
               name,
+              _,
+              blocks,
+              _,
+              threads,
+              _,
+              smem,
+              _,
+              _,
+              args,
+              _,
+              given,
+              yields,
+            ) =>
+              GpgpuCudaKernelInvocation(
+                convert(name),
+                convert(blocks),
+                convert(threads),
+                Some(convert(smem)),
+                convert(args),
+                convertEmbedGiven(given),
+                convertEmbedYields(yields),
+             )(blame(expr))
+            case GpgpuCudaKernelInvocation1(
+               name,
               _,
               blocks,
               _,
@@ -959,16 +984,17 @@ case class CToCol[G](
               _,
               given,
               yields,
-            )
-          ) =>
-        GpgpuCudaKernelInvocation(
-          convert(name),
-          convert(blocks),
-          convert(threads),
-          convert(args),
-          convertEmbedGiven(given),
-          convertEmbedYields(yields),
-        )(blame(expr))
+            ) =>
+              GpgpuCudaKernelInvocation(
+                convert(name),
+                convert(blocks),
+                convert(threads),
+                None,
+                convert(args),
+                convertEmbedGiven(given),
+                convertEmbedYields(yields),
+             )(blame(expr))
+        }
     }
 
   def convert(implicit expr: AnnotatedPrimaryExpressionContext): Expr[G] =

@@ -22,6 +22,10 @@ import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.collection.mutable
 import vct.col.ref.UnresolvedRef
+import vct.col.resolve.NoSuchNameError
+import vct.col.typerules.TypeSize.Unknown
+import vct.col.typerules.TypeSize.Exact
+import vct.col.typerules.TypeSize.Minimally
 
 case object LangCToCol {
   private case class MultipleSharedMemoryDeclaration(decl: Node[_])
@@ -29,7 +33,7 @@ case object LangCToCol {
     override def code: String = "multipleSharedMemoryDeclaration"
     override def text: String =
       decl.o.messageInContext(
-        s"We don't support declaring multiple shared memory variables at a single line."
+        s"We don't support declaring multiple shared memory variables at a single line. Furthermore, there can only be 1 dynamically sized shared memory per kernel."
       )
   }
 
@@ -124,6 +128,16 @@ case object LangCToCol {
     override def text: String =
       e.o.messageInContext(
         s"`\\shared_mem_size` should reference a dynamic shared memory location."
+      )
+  }
+
+  private case class InvalidDynamicMemBaseType(e: Expr[_]) extends UserError {
+
+    override def code: String = "invalidDynamicMemBaseType"
+
+    override def text: String =
+      e.o.messageInContext(
+        s"The type of data stored in the shared memory must be of a fixed-size type."
       )
   }
 
@@ -337,13 +351,19 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     .Set()
   private val dynamicSharedMemLengthVar
       : mutable.Map[CNameTarget[Pre], Variable[Post]] = mutable.Map()
+  private val dynamicSharedMemElemSize
+      : mutable.Map[CNameTarget[Pre], Expr[Post]] = mutable.Map()
+      
   private val staticSharedMemNames
       : mutable.Map[CNameTarget[Pre], (BigInt, Option[Blame[ArraySizeError]])] =
     mutable.Map()
+
   private val globalMemNames: mutable.Set[RefCParam[Pre]] = mutable.Set()
   private var kernelSpecifier: Option[CGpgpuKernelSpecifier[Pre]] = None
+
   private val functionPointers
       : mutable.Map[CFunctionDefinition[Pre], Function[Post]] = mutable.Map()
+  private val sharedMemTypeSize: mutable.Map[CFunctionDefinition[Pre], Expr[Post]] = mutable.Map()
 
   private def CStructOrigin(sdecl: CStructDeclaration[_]): Origin =
     sdecl.o.sourceName(sdecl.name.get).withContent(TypeName("struct"))
@@ -433,7 +453,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
 
   def sharedSize(shared: SharedMemSize[Pre]): Expr[Post] = {
     val SharedMemSize(pointer) = shared
-
     val res =
       pointer match {
         case loc: CLocal[Pre] =>
@@ -817,7 +836,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       cCurrentDefinitionParamSubstitutions.having(subs) {
         rw.globalDeclarations.declare(
           func.specs.collectFirst { case k: CGpgpuKernelSpecifier[Pre] =>
-            kernelProcedure(namedO, contract, info, Some(func.body), k)
+            kernelProcedureWrapper(namedO, contract, info, Some(func.body), k, func)
           }.getOrElse({
             val params =
               rw.variables.collect { info.params.get.foreach(rw.dispatch) }._1
@@ -1092,6 +1111,24 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
         .flatMap(e => dimsOfSize1Expr(e) ++ workDimConstrained(e))).distinct
   }
 
+  def kernelProcedureWrapper(
+      o: Origin,
+      contract: ApplicableContract[Pre],
+      info: C.DeclaratorInfo[Pre],
+      body: Option[Statement[Pre]],
+      kernelSpec: CGpgpuKernelSpecifier[Pre],
+      func: CFunctionDefinition[Pre]
+  ): Procedure[Post] = {
+    val proc = kernelProcedure(o, contract, info, body, kernelSpec)
+    val sharedMemElemSize: Expr[Post] = dynamicSharedMemNames.toSeq match {
+      case Seq(head) => dynamicSharedMemElemSize(head)
+      case Seq() => c_const[Post](0)(o)
+      case _ => throw MultipleSharedMemoryDeclaration(func)
+    }
+    sharedMemTypeSize(func) = sharedMemElemSize
+    proc
+  }
+
   def kernelProcedure(
       o: Origin,
       contract: ApplicableContract[Pre],
@@ -1128,7 +1165,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
               sharedMemInits: Seq[Statement[Post]],
             ),
           ) = declareSharedMemory()
-
+          
           val newArgs =
             blockDim.indices.values.toSeq ++ gridDim.indices.values.toSeq ++
               args ++ sharedMemSizes
@@ -1375,6 +1412,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     dynamicSharedMemNames.add(cRef)
     val v = new Variable[Post](TPointer[Post](rw.dispatch(t), None))(o)
     cNameSuccessor(cRef) = v
+    dynamicSharedMemElemSize(cRef) = sizeOf(t, o)
   }
 
   def evaluateStaticSize(sizeExpr: Expr[Pre]): Option[BigInt] =
@@ -1716,9 +1754,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
   }
 
   @tailrec
-  private def getArrayType(cta: CTArray[Pre]): Type[Pre] =
+  private def getArrayType[G](cta: CTArray[G]): Type[G] =
     cta.innerType match {
-      case inner: CTArray[Pre] => getArrayType(inner)
+      case inner: CTArray[G] => getArrayType(inner)
       case inner => inner
     }
 
@@ -1939,9 +1977,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     )
   }
 
-  def getInnerPointerInfo(
-      t: Type[Pre]
-  ): Option[(Type[Pre], Option[Expr[Pre]], Option[Blame[ArraySizeError]])] =
+  def getInnerPointerInfo[G](
+      t: Type[G]
+  ): Option[(Type[G], Option[Expr[G]], Option[Blame[ArraySizeError]])] =
     getBaseType(t) match {
       case TPointer(it, _) => Some((it, None, None))
       case CTPointer(it) => Some((it, None, None))
@@ -2448,6 +2486,26 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     }
   }
 
+ def getDimRefs(
+  blocks: Expr[Pre],
+  block_y: Expr[Pre],
+  block_z: Expr[Pre]
+ ): (Expr[Pre], Expr[Pre], Expr[Pre]) = {
+  val blame = PanicBlame("Launch dimension must be an int or a dim3.")
+  blocks.checkSubType(TInt()) match {
+      case Nil =>
+        (blocks, block_y, block_z) //an int - don't need to do anything
+      case _ => 
+        val b_x = CFieldAccess[Pre](blocks, "x")(blame)(blocks.o)
+        b_x.ref = C.findDeref(blocks, "x", blame)
+        val b_y = CFieldAccess[Pre](blocks, "y")(blame)(blocks.o)
+        b_y.ref = C.findDeref(blocks, "y", blame)
+        val b_z = CFieldAccess[Pre](blocks, "y")(blame)(blocks.o)
+        b_z.ref = C.findDeref(blocks, "z", blame)
+        (b_x, b_y, b_z)
+    }
+ }
+
   /** Rewrites a CudaKernelInvocation to a procedure.
     * @param kernel
     *   \- the invocation we want to rewrite
@@ -2461,19 +2519,27 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       ker,
       blocks,
       threads,
+      smem_bytes,
       args,
       givenMap,
       yields,
     ) = kernel
     implicit val o: Origin = kernel.o
-    val one = c_const[Post](1)
+    val one = c_const[Pre](1)
+    val (b_x, b_y, b_z) = getDimRefs(blocks, one, one)
+    val (t_x, t_y, t_z) = getDimRefs(threads, one, one)
     kernel.ref.get match {
       case target: SpecInvocationTarget[_] => ???
       case ref: RefCFunctionDefinition[Pre] =>
+        val smem_size = smem_bytes match { //convert size from bytes to elems
+          case Some(s) => Some(AmbiguousTruncDiv(rw.dispatch(s), sharedMemTypeSize(ref.decl))(PanicBlame("Unreachable sizeof == 0")))
+          case None => None
+        }
         ProcedureInvocation[Post](
           cFunctionSuccessor.ref(ref.decl),
-          rw.dispatch(threads) +: one +: one +: rw.dispatch(blocks) +: one +:
-            one +: args.map(rw.dispatch),
+            (rw.dispatch(t_x) +: rw.dispatch(t_y) +: rw.dispatch(t_z) +:
+            rw.dispatch(b_x) +: rw.dispatch(b_y) +: rw.dispatch(b_z) +:
+            args.map(rw.dispatch)) ++ smem_size,
           Nil,
           Nil,
           givenMap.map { case (Ref(v), e) => (rw.succ(v), rw.dispatch(e)) },

@@ -11,6 +11,8 @@ class GpgpuSpec extends VercorsSpec {
   vercors should verify using silicon example "concepts/gpgpu/opencl_vector_add.cl"
   vercors should verify using silicon example "concepts/gpgpu/cuda_blur.cu"
 
+  vercors should verify using silicon example "concepts/gpgpu/launch.cu"
+  
   vercors should verify using silicon example "concepts/gpgpu/dynamic_shared_cuda.cu"
   vercors should verify using silicon example "concepts/gpgpu/dynamic_shared_opencl.cl"
   vercors should verify using silicon example "concepts/gpgpu/static_shared_cuda.cu"
@@ -22,6 +24,7 @@ class GpgpuSpec extends VercorsSpec {
   vercors should fail withCode "preFailed:perm" using silicon example "concepts/gpgpu/atomic_fail-1.cu"
   vercors should fail withCode "ptrPerm" using silicon example "concepts/gpgpu/atomic_fail-2.cu"
   
+
   vercors should error withCode "wrongGPUDimension" in "Wrong gpu dimension" c """
 #include <opencl.h>
 

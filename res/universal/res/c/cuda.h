@@ -18,6 +18,13 @@ typedef uint64_t cuuint64_t;
 #define atomicAdd(tgt, val) __vercors_atomic__ { (tgt)[0] += (val); }
 #define atomicRelax(tgt, w, s) __vercors_atomic__ { (tgt)[0] = (s != -1 && ((tgt)[0] == -1 || s+w <= (tgt)[0])) ? s+w : (tgt)[0]; }
 
+struct dim3 {
+  int x;
+  int y;
+  int z;
+};
+typedef struct dim3 dim3;
+
 extern int /*@ pure @*/ get_work_dim(); // Number of dimensions in use
 
 extern int /*@ pure @*/ get_global_size(int dimindx); // Number of global work-items

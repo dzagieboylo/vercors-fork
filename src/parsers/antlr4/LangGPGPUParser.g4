@@ -5,7 +5,8 @@ gpgpuBarrier
     ;
 
 gpgpuCudaKernelInvocation
-    : clangIdentifier GPGPU_CUDA_OPEN_EXEC_CONFIG expression ',' expression GPGPU_CUDA_CLOSE_EXEC_CONFIG '(' argumentExpressionList ')' valEmbedGiven? valEmbedYields?
+    : clangIdentifier GPGPU_CUDA_OPEN_EXEC_CONFIG expression ',' expression ',' expression GPGPU_CUDA_CLOSE_EXEC_CONFIG '(' argumentExpressionList ')' valEmbedGiven? valEmbedYields?
+    | clangIdentifier GPGPU_CUDA_OPEN_EXEC_CONFIG expression ',' expression GPGPU_CUDA_CLOSE_EXEC_CONFIG '(' argumentExpressionList ')' valEmbedGiven? valEmbedYields?
     ;
 
 gpgpuAtomicBlock
