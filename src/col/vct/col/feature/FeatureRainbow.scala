@@ -208,6 +208,7 @@ class FeatureRainbow[G] {
       case node: CVoid[G] => CSpecific
       case node: CVolatile[G] => CSpecific
       case node: GlobalThreadId[G] => CSpecific
+      case node: CudaDevice[G] => CSpecific
       case node: GpgpuAtomic[G] => CSpecific
       case node: GpgpuBarrier[G] => CSpecific
       case node: GpgpuCudaKernelInvocation[G] => CSpecific

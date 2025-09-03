@@ -184,6 +184,7 @@ case class CToCol[G](
   ): CDeclarationSpecifier[G] =
     functionSpec match {
       case FunctionSpecifier0("inline") => CInline[G]()
+      case FunctionSpecifier0("__device__") => CudaDevice[G]()
       case FunctionSpecifier0(_) => ??(functionSpec)
       case FunctionSpecifier1(attribute) =>
         CFunctionTypeExtensionModifier(convert(attribute))

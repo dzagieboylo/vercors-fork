@@ -3015,6 +3015,9 @@ final case class OpenCLKernel[G]()(val blame: Blame[KernelFailure])(
     implicit val o: Origin
 ) extends CGpgpuKernelSpecifier[G] with OpenCLKernelImpl[G]
 
+final case class CudaDevice[G]()(implicit val o: Origin)
+    extends CSpecificationModifier[G] with CudaDeviceImpl[G]
+    
 @family
 final case class CPointer[G](qualifiers: Seq[CTypeQualifier[G]])(
     implicit val o: Origin

@@ -819,6 +819,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     val pure = func.specs.collectFirst { case CPure() => () }.isDefined
     val inline = func.specs.collectFirst { case CInline() => () }.isDefined
     val opaque = func.specs.collectFirst { case COpaque() => () }.isDefined
+    val device_func = func.specs.collectFirst {case CudaDevice() => () }.isDefined
 
     val (contract, subs: Map[CParam[Pre], CParam[Pre]]) =
       func.ref match {

@@ -365,7 +365,8 @@ functionSpecifier
     :   ('inline'
     |   '_Noreturn'
     |   '__inline__' // GCC extension
-    |   '__stdcall')
+    |   '__stdcall'
+    |   CUDA_DEVICE) //cuda device code
     |   gccAttributeSpecifier
     |   '__declspec' '(' clangIdentifier ')'
     ;
