@@ -11,7 +11,7 @@ import vct.col.ref.{LazyRef, Ref}
 import vct.col.resolve.lang.C
 import vct.col.resolve.ctx._
 import vct.col.resolve.lang.C.nameFromDeclarator
-import vct.col.rewrite.{Generation, Rewritten}
+import vct.col.rewrite.{Generation, Rewritten, InlineApplicables}
 import vct.col.typerules.{CoercionUtils, TypeSize}
 import vct.col.util.{SuccessionMap, Substitute}
 import vct.col.util.AstBuildHelpers._
@@ -820,7 +820,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     val inline = func.specs.collectFirst { case CInline() => () }.isDefined
     val opaque = func.specs.collectFirst { case COpaque() => () }.isDefined
     val device_func = func.specs.collectFirst {case CudaDevice() => () }.isDefined
-
     val (contract, subs: Map[CParam[Pre], CParam[Pre]]) =
       func.ref match {
         case Some(RefCGlobalDeclaration(decl, idx))
@@ -837,10 +836,10 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       }
 
     val namedO = func.o.sourceName(info.name)
+
     val proc =
       cCurrentDefinitionParamSubstitutions.having(subs) {
-        rw.globalDeclarations.declare(
-          func.specs.collectFirst { case k: CGpgpuKernelSpecifier[Pre] =>
+        val newproc = func.specs.collectFirst { case k: CGpgpuKernelSpecifier[Pre] =>
             kernelProcedureWrapper(namedO, contract, info, Some(func.body), k, func)
           }.getOrElse({
             val params =
@@ -855,13 +854,19 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                 contract = rw.dispatch(contract),
                 inline = inline,
                 pure = pure,
+                device = device_func,
                 opaque = opaque,
               )(func.blame)(namedO)
             }
           })
-        )
+        if (device_func) {
+          newproc // don't declare it, we're inlining all calls
+        } else {
+          rw.globalDeclarations.declare(
+            newproc
+          )
+        }
       }
-
     cFunctionSuccessor(func) = proc
 
     func.ref match {
@@ -2482,7 +2487,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           inv.blame,
         )
       case ref: RefCFunctionDefinition[Pre] =>
-        ProcedureInvocation[Post](
+        val proc = cFunctionSuccessor(ref.decl)
+        val invoc = ProcedureInvocation[Post](
           cFunctionSuccessor.ref(ref.decl),
           newArgs,
           Nil,
@@ -2491,8 +2497,69 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           yields.map { case (e, Ref(v)) => (rw.dispatch(e), rw.succ(v)) },
           reveal = reveal,
         )(inv.blame)
+        if (proc.device) {
+          inlineDeviceInvocation(inv, newArgs, proc)
+        } else {
+          invoc
+        }
       case e: RefCGlobalDeclaration[Pre] => globalInvocation(e, inv, newArgs)
     }
+  }
+
+  //The following is co-opted from the inline-ing pass.
+  //I will need to basically re-write it in a bit.
+  def inlineDeviceInvocation(inv: CInvocation[Pre], newArgs: Seq[Expr[Post]], proc: Procedure[Post]): Expr[Post] = {
+    implicit val o: Origin = inv.o
+    lazy val args = InlineApplicables.Replacements(
+        for ((arg, v) <- newArgs.zip(proc.ref.decl.args))
+          yield InlineApplicables.Replacement(v.get, arg)(v.o)
+    )
+    val newbody = With(proc.body.getOrElse(Block(Seq())), c_const[Post](1))
+    val retType = proc.returnType
+    stat(retType, proc.body.getOrElse(throw InlineApplicables.AbstractInlineable(inv, proc)), args.replacements)
+    // val retStmt = captureReturn(retType, proc.body.getOrElse(Block(Seq())))
+    // val res = ScopedExpr[Post](proc.args, retStmt)
+    // res
+  }
+
+  def captureReturn[G](t: Type[G], body: Statement[G])(
+        implicit o: Origin
+    ): Expr[G] = {
+      val done = Label[G](
+        new LabelDecl(),
+        Block(Nil),
+        LoopInvariant(tt, None)(TrueSatisfiable),
+      )
+      val result = new Variable[G](t)
+      val sub = InlineApplicables.ReplaceReturn((e: Expr[G]) =>
+        Block(Seq(assignLocal(result.get, e), Goto[G](done.decl.ref)))
+      )
+      val newBody = sub.labelDecls.scope { sub.dispatch(body) }
+      ScopedExpr(Seq(result), With(Block(Seq(newBody, done)), result.get))
+  }
+
+  def stat[G](
+      t: Type[G],
+      s: Statement[G],
+      replacements: Seq[InlineApplicables.Replacement[G]],
+  )(implicit o: Origin): Expr[G] = {
+    val sub = Substitute[G](replacements
+        .map(r => r.replacing -> r.withVariable.get).toMap
+    )
+    // labelDecls is the only scope peeled off by taking the body of the to-be-inlined applicable.
+    val replaced = sub.labelDecls.scope { sub.dispatch(s) }
+    val capture = captureReturn(t, replaced)
+    ScopedExpr(replacements.map(_.withVariable),
+      With(
+        Block(
+          replacements.map(r => assignLocal(r.withVariable.get, r.binding))
+        ),
+        Then(
+          capture,
+          Block(Seq()),
+        ),
+      ),
+    )
   }
 
  def getDimRefs(

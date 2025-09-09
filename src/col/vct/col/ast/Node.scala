@@ -784,6 +784,7 @@ final class Procedure[G](
     val inline: Boolean = false,
     val pure: Boolean = false,
     val opaque: Boolean = false,
+    val device: Boolean = false,
     val vesuv_entry: Boolean = false,
     val pallasWrapper: Boolean = false,
     val pallasFunction: Boolean = false,
