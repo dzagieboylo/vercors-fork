@@ -809,7 +809,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     }
   }
 
-  def rewriteFunctionDef(func: CFunctionDefinition[Pre]): Unit = {
+
+  def rewriteFunctionDef(func: CFunctionDefinition[Pre], skipDevice: Boolean = true, updateDeclarations: Boolean = true): Option[Procedure[Post]] = {
     func.drop()
     val info = C.getDeclaratorInfo(func.declarator)
     val returnType =
@@ -834,46 +835,48 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           (decl.decl.contract, declParams.zip(defnParams).toMap)
         case _ => (func.contract, Map.empty)
       }
-
     val namedO = func.o.sourceName(info.name)
-
     val proc =
       cCurrentDefinitionParamSubstitutions.having(subs) {
         val newproc = func.specs.collectFirst { case k: CGpgpuKernelSpecifier[Pre] =>
-            kernelProcedureWrapper(namedO, contract, info, Some(func.body), k, func)
-          }.getOrElse({
-            val params =
-              rw.variables.collect { info.params.get.foreach(rw.dispatch) }._1
-            rw.labelDecls.scope {
-              new Procedure[Post](
-                returnType = returnType,
-                args = params,
-                outArgs = Nil,
-                typeArgs = Nil,
-                body = Some(rw.dispatch(func.body)),
-                contract = rw.dispatch(contract),
-                inline = inline,
-                pure = pure,
-                device = device_func,
-                opaque = opaque,
-              )(func.blame)(namedO)
-            }
-          })
-        if (device_func) {
-          newproc // don't declare it, we're inlining all calls
-        } else {
-          rw.globalDeclarations.declare(
-            newproc
-          )
+            Some(kernelProcedureWrapper(namedO, contract, info, Some(func.body), k, func))
+          }.getOrElse(
+            (device_func && skipDevice) match {
+              case true => None
+              case false =>
+                val params = rw.variables.collect { info.params.get.foreach(rw.dispatch) }._1
+                Some(rw.labelDecls.scope {
+                  new Procedure[Post](
+                    returnType = returnType,
+                    args = params,
+                    outArgs = Nil,
+                    typeArgs = Nil,
+                    body = Some(rw.dispatch(func.body)),
+                    contract = rw.dispatch(contract),
+                    inline = inline,
+                    pure = pure,
+                    device = device_func,
+                    opaque = opaque,
+                  )(func.blame)(namedO)
+                })
+            })
+        newproc match {
+          case Some(p) if updateDeclarations => rw.globalDeclarations.declare(p)
+          case _ => // skipped compilation
         }
+        newproc
       }
-    cFunctionSuccessor(func) = proc
-
-    func.ref match {
-      case Some(RefCGlobalDeclaration(decl, idx)) =>
-        cFunctionDeclSuccessor((decl, idx)) = proc
-      case None => // ok
+    proc match {
+      case Some(p) if updateDeclarations =>
+        cFunctionSuccessor(func) = p
+        func.ref match {
+          case Some(RefCGlobalDeclaration(decl, idx)) =>
+            cFunctionDeclSuccessor((decl, idx)) = p
+          case None => // ok
+        }
+      case _ => //skipping
     }
+    proc
   }
 
   def all(
@@ -2487,7 +2490,10 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
           inv.blame,
         )
       case ref: RefCFunctionDefinition[Pre] =>
-        val proc = cFunctionSuccessor(ref.decl)
+        val proc = cFunctionSuccessor.get(ref.decl) match {
+          case Some(p) => p
+          case None => rewriteFunctionDef(ref.decl, false, false).getOrElse(???)
+        }
         val invoc = ProcedureInvocation[Post](
           cFunctionSuccessor.ref(ref.decl),
           newArgs,
@@ -2507,7 +2513,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
   }
 
   //The following is co-opted from the inline-ing pass.
-  //I will need to basically re-write it in a bit.
   def inlineDeviceInvocation(inv: CInvocation[Pre], newArgs: Seq[Expr[Post]], proc: Procedure[Post]): Expr[Post] = {
     implicit val o: Origin = inv.o
     lazy val args = InlineApplicables.Replacements(
@@ -2517,9 +2522,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
     val newbody = With(proc.body.getOrElse(Block(Seq())), c_const[Post](1))
     val retType = proc.returnType
     stat(retType, proc.body.getOrElse(throw InlineApplicables.AbstractInlineable(inv, proc)), args.replacements)
-    // val retStmt = captureReturn(retType, proc.body.getOrElse(Block(Seq())))
-    // val res = ScopedExpr[Post](proc.args, retStmt)
-    // res
   }
 
   def captureReturn[G](t: Type[G], body: Statement[G])(
