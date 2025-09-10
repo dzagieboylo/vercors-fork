@@ -852,16 +852,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                     outArgs = Nil,
                     typeArgs = Nil,
                     body = Some(rw.dispatch(device_func match {
-                      case true => 
-                        val nbody = filterSharedDecl(func.body)
-                        //update shared mem decls:
-                        rw.variables.collect {
-                          dynamicSharedMemNames.foreach(d => rw.variables.declare(cNameSuccessor(d)))
-                        }
-                        rw.variables.collect {
-                          staticSharedMemNames.foreach(d => rw.variables.declare(cNameSuccessor(d._1)))
-                        }
-                        nbody
+                      case true => filterSharedDecl(func.body)
                       case false => func.body
                     })),
                     contract = rw.dispatch(contract),
@@ -991,18 +982,26 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
       case _ => throw Unreachable("Should not happen")
     }
 
-  def declareSharedMemory()
-      : (Seq[Variable[Post]], (Seq[Variable[Post]], Seq[Statement[Post]])) =
+  def declareSharedMemSizes(): Seq[Variable[Post]] = {
     rw.variables.collect {
-      var declarations: Seq[Variable[Post]] = Seq()
-      var inits: Seq[Statement[Post]] = Seq()
       dynamicSharedMemNames.foreach(d => {
-        implicit val o: Origin = getCDecl(d).o
+       implicit val o: Origin = getCDecl(d).o
         val varO: Origin = o
           .where(name = s"${C.getDeclaratorInfo(getCDecl(d)).name}_size")
         val v = new Variable[Post](TCInt())(varO)
         dynamicSharedMemLengthVar(d) = v
         rw.variables.declare(v)
+      })
+    }._1
+  }
+
+  def declareSharedMemory(sizes: Seq[Variable[Post]])
+      : (Seq[Variable[Post]], Seq[Statement[Post]]) = {
+      var declarations: Seq[Variable[Post]] = Seq()
+      var inits: Seq[Statement[Post]] = Seq()
+      dynamicSharedMemNames.zip(sizes).foreach( t => {
+        val (d, v) = t
+        implicit val o: Origin = getCDecl(d).o
         val assign: Statement[Post] = assignLocal(
           Local(cNameSuccessor(d).ref),
           NewNonNullPointer[Post](
@@ -1028,7 +1027,6 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
         declarations ++= Seq(cNameSuccessor(d))
         inits ++= Seq(assign)
       }
-
       (declarations, inits)
     }
 
@@ -1184,7 +1182,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
               .foreach(d => rw.variables.declare(cNameSuccessor(d._1)))
           }
          
-          
+          //declare shared mem sizes
+          val smemSizes = declareSharedMemSizes()
           val newGivenArgs = rw.variables.dispatch(contract.givenArgs)
           val newYieldsArgs = rw.variables.dispatch(contract.yieldsArgs)
           // We add the requirement that a GPU kernel must always have threads (non zero block or grid dimensions)
@@ -1261,12 +1260,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                       )
                       //now get shared memory declarations, after compiling inner body (which finds any declared inside inlined functions)
                       val (
-                        sharedMemSizes,
-                        (
                           sharedMemDecls: Seq[Variable[Post]],
-                          sharedMemInits: Seq[Statement[Post]],
-                        ),
-                      ) = declareSharedMemory()
+                          sharedMemInits: Seq[Statement[Post]]
+                        ) = declareSharedMemory(smemSizes)
                       val outerContent = ParStatement[Post](
                         ParBlock(
                           decl = gridDecl,
@@ -1356,17 +1352,9 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                 unfoldStar(contractEnsures).filter(hasNoSharedMemNames)
                   .map(allThreadsInGrid(KernelNotInjective(kernelSpec)))
             )(o)
-          //This should be idempotent and thus OK to call again
-          val (
-            sharedMemSizes,
-            (
-              sharedMemDecls: Seq[Variable[Post]],
-              sharedMemInits: Seq[Statement[Post]],
-            ),
-          ) = declareSharedMemory()
           val newArgs =
           blockDim.indices.values.toSeq ++ gridDim.indices.values.toSeq ++
-            args ++ sharedMemSizes
+            args ++ smemSizes
           val result =
             new Procedure[Post](
               returnType = TVoid(),
