@@ -851,7 +851,19 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                     args = params,
                     outArgs = Nil,
                     typeArgs = Nil,
-                    body = Some(rw.dispatch(func.body)),
+                    body = Some(rw.dispatch(device_func match {
+                      case true => 
+                        val nbody = filterSharedDecl(func.body)
+                        //update shared mem decls:
+                        rw.variables.collect {
+                          dynamicSharedMemNames.foreach(d => rw.variables.declare(cNameSuccessor(d)))
+                        }
+                        rw.variables.collect {
+                          staticSharedMemNames.foreach(d => rw.variables.declare(cNameSuccessor(d._1)))
+                        }
+                        nbody
+                      case false => func.body
+                    })),
                     contract = rw.dispatch(contract),
                     inline = inline,
                     pure = pure,
@@ -1171,17 +1183,8 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
             staticSharedMemNames
               .foreach(d => rw.variables.declare(cNameSuccessor(d._1)))
           }
-          val (
-            sharedMemSizes,
-            (
-              sharedMemDecls: Seq[Variable[Post]],
-              sharedMemInits: Seq[Statement[Post]],
-            ),
-          ) = declareSharedMemory()
+         
           
-          val newArgs =
-            blockDim.indices.values.toSeq ++ gridDim.indices.values.toSeq ++
-              args ++ sharedMemSizes
           val newGivenArgs = rw.variables.dispatch(contract.givenArgs)
           val newYieldsArgs = rw.variables.dispatch(contract.yieldsArgs)
           // We add the requirement that a GPU kernel must always have threads (non zero block or grid dimensions)
@@ -1239,7 +1242,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                         cudaConstantDims.top.indices.values
                           .map(v => (v.get, c_const[Post](0))).toMap
                       )
-
+                      val innerBody = rw.dispatch(implFiltered.get) //do this first to accumulate shared memory names
                       val innerContent = ParStatement(
                         ParBlock(
                           decl = blockDecl,
@@ -1253,9 +1256,17 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                           requires = sub
                             .dispatch(rw.dispatch(contractRequires)),
                           ensures = sub.dispatch(rw.dispatch(contractEnsures)),
-                          content = rw.dispatch(implFiltered.get),
+                          content = innerBody,
                         )(KernelParFailure(kernelSpec))
                       )
+                      //now get shared memory declarations, after compiling inner body (which finds any declared inside inlined functions)
+                      val (
+                        sharedMemSizes,
+                        (
+                          sharedMemDecls: Seq[Variable[Post]],
+                          sharedMemInits: Seq[Statement[Post]],
+                        ),
+                      ) = declareSharedMemory()
                       val outerContent = ParStatement[Post](
                         ParBlock(
                           decl = gridDecl,
@@ -1345,6 +1356,17 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
                 unfoldStar(contractEnsures).filter(hasNoSharedMemNames)
                   .map(allThreadsInGrid(KernelNotInjective(kernelSpec)))
             )(o)
+          //This should be idempotent and thus OK to call again
+          val (
+            sharedMemSizes,
+            (
+              sharedMemDecls: Seq[Variable[Post]],
+              sharedMemInits: Seq[Statement[Post]],
+            ),
+          ) = declareSharedMemory()
+          val newArgs =
+          blockDim.indices.values.toSeq ++ gridDim.indices.values.toSeq ++
+            args ++ sharedMemSizes
           val result =
             new Procedure[Post](
               returnType = TVoid(),
@@ -1465,7 +1487,7 @@ case class LangCToCol[Pre <: Generation](rw: LangSpecificToCol[Pre])
         case Block(Seq(s_inner)) => return isShared(s_inner)
         case _ => return false
       }
-
+    
     if (decl.decl.inits.size != 1)
       throw MultipleSharedMemoryDeclaration(decl)
 
