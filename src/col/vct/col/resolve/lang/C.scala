@@ -431,6 +431,12 @@ case object C {
       case _ => t
     }
 
+  def stripConstType[G](t: Type[G]): Type[G] =
+    t match {
+        case TConst(inner) => stripConstType[G](inner)
+        case _ => t
+    }
+
   def findPointerDeref[G](
       obj: Expr[G],
       name: String,

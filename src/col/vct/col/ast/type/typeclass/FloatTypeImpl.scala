@@ -32,8 +32,9 @@ object TFloats {
   // Only returns a float, when one of the types is floating itself
   // Returns to biggest float, e.g. (float32, float64) should return float64
   def getFloatMax[G](ll: Type[G], rr: Type[G]): Option[FloatType[G]] = {
-    val l = C.stripCPrimitiveType(ll)
-    val r = C.stripCPrimitiveType(rr)
+    //binop results can't be consts anyway so we should strip them from the args too
+    val l = C.stripCPrimitiveType(C.stripConstType(ll))
+    val r = C.stripCPrimitiveType(C.stripConstType(rr))
     val promote =
       (l, r) match {
         case (_: TFloat[G], _) => true
