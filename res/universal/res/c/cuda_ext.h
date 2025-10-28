@@ -1,67 +1,13 @@
 #ifndef CUDA_EXT_H
 #define CUDA_EXT_H
-#define MATH_H  //also define math since these headers are incompatible
 
-#define M_PI           3.14159265358979323846  /* pi */
-#define FLT_MAX 3.40282346638528859812e+38F
+#include "math.h"
 
-const double NAN = vercorsNAN;
-const double INFINITY = vercorsINFINITY;
-
-/*@
-  decreases;
-pure double M_PI() = 3.14159265358979323846;
-@*/
-
-/*@
-  ensures \result == powf(2.7182818284, x);
-  decreases;
-@*/
-/*@ pure @*/ float expf(float x);
-
-
-/*@
-  requires x >= -1 && x <= 1;
-  ensures \result >= 0 && \result <= M_PI();
-  decreases;
-@*/
-/*@ pure @*/ float acosf(float x);
 /*@ pure @*/ float acoshf(float x);
-/*@
-  requires x >= -1 && x <= 1;
-  ensures \result >= -M_PI()/2 && \result <= M_PI()/2;
-  decreases;
-@*/
-/*@ pure @*/ float asinf(float x);
 /*@ pure @*/ float asinhf(float x);
-/*@
-  ensures -M_PI() <= \result && \result <= M_PI();
-  decreases;
-@*/
-/*@ pure @*/ float atan2f(float y, float x);
-/*@
-  ensures \result >= -M_PI()/2 && \result <= M_PI()/2;
-  decreases;
-@*/
-/*@ pure @*/ float atanf(float x);
 /*@ pure @*/ float atanhf(float x);
 /*@ pure @*/ float cbrtf(float x);
-/*@
-  ensures \result == (\is_int(x) ? x : (float)((int)x + 1));
-  decreases;
-@*/
-/*@ pure @*/ float ceilf(float x);
 /*@ pure @*/ float copysignf(float x, float y);
-/*@
-  ensures \result >= -1 && \result <= 1;
-  decreases;
-@*/
-/*@ pure @*/ float cosf(float x);
-/*@
-  ensures \result == (expf(x) + expf(-x)) \ 2;
-  decreases;
-@*/
-/*@ pure @*/ float coshf(float x);
 /*@ pure @*/ float cospif(float x);
 /*@ pure @*/ float cyl_bessel_i0f(float x);
 /*@ pure @*/ float cyl_bessel_i1f(float x);
@@ -73,28 +19,13 @@ pure double M_PI() = 3.14159265358979323846;
 /*@ pure @*/ float exp10f(float x);
 /*@ pure @*/ float exp2f(float x);
 /*@ pure @*/ float expm1f(float x);
-/*@
-  ensures \result == (x >= 0 ? x : -x);
-  decreases;
-@*/
-/*@ pure @*/ float fabsf(float x);
 /*@ pure @*/ float fdimf(float x, float y);
 /*@ pure @*/ float fdividef(float x, float y);
-/*@
-  ensures \result == (float)((int)x);
-  decreases;
-@*/
-/*@ pure @*/ float floorf(float x);
 /*@ pure @*/ float fmaf(float x, float y, float z);
 /*@ pure @*/ float fmaxf(float x, float y);
 /*@ pure @*/ float fminf(float x, float y);
 /*@ pure @*/ float fmodf(float x, float y);
 /*@ pure @*/ float frexpf(float x, int *nptr);
-/*@
-  ensures \result == powf(x*x + y*y, 0.5);
-  decreases;
-@*/
-/*@ pure @*/ float hypotf(float x, float y);
 /*@ pure @*/ int ilogbf(float x);
 /*@ pure @*/ int isfinite(float a);
 /*@ pure @*/ int isinf(float a);
@@ -110,14 +41,8 @@ pure double M_PI() = 3.14159265358979323846;
 /*@ pure @*/ float log1pf(float x);
 /*@ pure @*/ float log2f(float x);
 /*@ pure @*/ float logbf(float x);
-/*@
-  decreases;
-@*/
-/*@ pure @*/ float logf(float x);
 /*@ pure @*/ long int lrintf(float x);
 /*@ pure @*/ long int lroundf(float x);
-/*@ pure @*/ float max(const float a, const float b);
-/*@ pure @*/ float min(const float a, const float b);
 /*@ pure @*/ float modff(float x, float *iptr);
 /*@ pure @*/ float nanf(const char *tagp);
 /*@ pure @*/ float nearbyintf(float x);
@@ -127,12 +52,6 @@ pure double M_PI() = 3.14159265358979323846;
 /*@ pure @*/ float normcdff(float x);
 /*@ pure @*/ float normcdfinvf(float x);
 /*@ pure @*/ float normf(int dim, float const *p);
-/*@
-  ensures \result == \pow(x, y);
-  ensures x > 0 ==> \result > 0;
-  decreases;
-@*/
-/*@ pure @*/ float powf(float x, float y);
 /*@ pure @*/ float rcbrtf(float x);
 /*@ pure @*/ float remainderf(float x, float y);
 /*@ pure @*/ float remquof(float x, float y, int *quo);
@@ -141,44 +60,13 @@ pure double M_PI() = 3.14159265358979323846;
 /*@ pure @*/ float rnorm3df(float a, float b, float c);
 /*@ pure @*/ float rnorm4df(float a, float b, float c, float d);
 /*@ pure @*/ float rnormf(int dim, float const *p);
-/*@
-  ensures !(x < 0 && \is_int(x-0.5)) ==> \result == (float)(int)(x + 0.5);
-  ensures (x < 0 && \is_int(x-0.5)) ==> \result == x-0.5;
-  decreases;
-@*/
-/*@ pure @*/ float roundf(float x);
 /*@ pure @*/ float rsqrtf(float x);
 /*@ pure @*/ float scalblnf(float x, long int n);
 /*@ pure @*/ float scalbnf(float x, int n);
 /*@ pure @*/ int signbit(float a);
 /*@ pure @*/ void sincosf(float x, float *sptr, float *cptr);
 /*@ pure @*/ void sincospif(float x, float *sptr, float *cptr);
-/*@ ensures \result >= -1 && \result <= 1;
-    decreases;
-@*/
-/*@ pure @*/ float sinf(float x);
-/*@
-  ensures \result == (expf(x) - expf(-x)) \ 2;
-  decreases;
-@*/
-/*@ pure @*/ float sinhf(float x);
 /*@ pure @*/ float sinpif(float x);
-/*@
-  requires x>= 0;
-  ensures \result == \pow(x, 0.5);
-  decreases;
-@*/
-/*@ pure @*/ float sqrtf(float x);
-/*@
-  ensures x == 0 ==> \result == 0;
-  decreases;
-@*/
-/*@ pure @*/ float tanf(float x);
-/*@
-  ensures \result == (expf(x) - expf(-x)) \ (expf(x) + expf(-x));
-  decreases;
-@*/
-/*@ pure @*/ float tanhf(float x);
 /*@ pure @*/ float tgammaf(float x);
 /*@ pure @*/ float truncf(float x);
 /*@ pure @*/ float y0f(float x);
@@ -231,4 +119,5 @@ pure double M_PI() = 3.14159265358979323846;
 /*@ pure @*/ float __sinf(float x);
 /*@ pure @*/ float __tanf(float x);
 /*@ pure @*/ float __tanhf(float x);
+
 #endif
